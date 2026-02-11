@@ -1,34 +1,35 @@
-import {PlatformAccessory} from 'homebridge/lib/platformAccessory';
-import {DaikinCloudAccessoryContext, DaikinCloudPlatform} from '../src/platform';
-import {MockPlatformConfig} from './mocks';
-import {daikinAirConditioningAccessory} from '../src/daikinAirConditioningAccessory';
-import {DaikinCloudDevice} from 'daikin-controller-cloud/dist/device';
-import {DaikinCloudController} from 'daikin-controller-cloud/dist/index.js';
-import {OnectaClient} from 'daikin-controller-cloud/dist/onecta/oidc-client';
-import {unknownJan} from './fixtures/unknown-jan';
-import {unknownKitchenGuests} from './fixtures/unknown-kitchen-guests';
-import {dx23Airco} from './fixtures/dx23-airco';
-import {dx4Airco} from './fixtures/dx4-airco';
-import {dx23Airco2} from './fixtures/dx23-airco-2';
+import { PlatformAccessory } from 'homebridge/lib/platformAccessory';
+import { DaikinCloudAccessoryContext, DaikinCloudPlatform } from '../src/platform';
+import { MockPlatformConfig } from './mocks';
+import { daikinAirConditioningAccessory } from '../src/daikinAirConditioningAccessory';
+import { DaikinCloudDevice } from 'daikin-controller-cloud/dist/device';
+import { DaikinCloudController } from 'daikin-controller-cloud/dist/index.js';
+import { OnectaClient } from 'daikin-controller-cloud/dist/onecta/oidc-client';
+import { unknownJan } from './fixtures/unknown-jan';
+import { unknownKitchenGuests } from './fixtures/unknown-kitchen-guests';
+import { dx23Airco } from './fixtures/dx23-airco';
+import { dx4Airco } from './fixtures/dx4-airco';
+import { dx23Airco2 } from './fixtures/dx23-airco-2';
 
-import {HomebridgeAPI} from 'homebridge/lib/api.js';
-import {Logger} from 'homebridge/lib/logger.js';
+import { HomebridgeAPI } from 'homebridge/lib/api.js';
+import { Logger } from 'homebridge/lib/logger.js';
 
 type DeviceState = {
-	activeState: boolean;
-	currentTemperature: number;
-	targetHeaterCoolerState: string;
-	coolingThresholdTemperature: number;
-	heatingThresholdTemperature: number;
-	rotationSpeed: number;
-	swingMode: number;
-	powerfulMode: number;
-	econoMode: number;
-	streamerMode: number;
-	outdoorSilentMode: number;
-	indoorSilentMode: number;
-	dryOperationMode: number;
-	fanOnlyOperationMode: number;
+    activeState: boolean;
+    currentTemperature: number;
+    targetHeaterCoolerState: string;
+    coolingThresholdTemperature: number;
+    heatingThresholdTemperature: number;
+    rotationSpeed: number;
+    swingMode: number;
+    powerfulMode: number;
+    econoMode: number;
+    streamerMode: number;
+    outdoorSilentMode: number;
+    indoorSilentMode: number;
+    dryOperationMode: number;
+    fanOnlyOperationMode: number;
+    fanAutoMode: number;
 };
 
 test.each<Array<string | string | any | DeviceState>>([
@@ -51,6 +52,7 @@ test.each<Array<string | string | any | DeviceState>>([
             indoorSilentMode: false,
             dryOperationMode: false,
             fanOnlyOperationMode: false,
+            fanAutoMode: false,
         },
     ],
     [
@@ -72,6 +74,7 @@ test.each<Array<string | string | any | DeviceState>>([
             indoorSilentMode: undefined,
             dryOperationMode: false,
             fanOnlyOperationMode: false,
+            fanAutoMode: false,
         },
     ],
     [
@@ -93,6 +96,7 @@ test.each<Array<string | string | any | DeviceState>>([
             indoorSilentMode: false,
             dryOperationMode: false,
             fanOnlyOperationMode: false,
+            fanAutoMode: false,
         },
     ],
     [
@@ -114,6 +118,7 @@ test.each<Array<string | string | any | DeviceState>>([
             indoorSilentMode: undefined,
             dryOperationMode: false,
             fanOnlyOperationMode: false,
+            fanAutoMode: false,
         },
     ],
     [
@@ -135,6 +140,7 @@ test.each<Array<string | string | any | DeviceState>>([
             indoorSilentMode: undefined,
             dryOperationMode: false,
             fanOnlyOperationMode: false,
+            fanAutoMode: false,
         },
     ],
 ])('Create DaikinCloudAirConditioningAccessory with %s device', async (name: string, climateControlEmbeddedId: string, deviceJson, state: DeviceState) => {
@@ -246,6 +252,13 @@ test.each<Array<string | string | any | DeviceState>>([
     if (typeof state.fanOnlyOperationMode !== 'undefined') {
         expect(await homebridgeAccessory.service.handleFanOnlyOperationModeGet()).toBe(state.fanOnlyOperationMode);
     }
+
+    if (typeof state.fanAutoMode !== 'undefined') {
+        expect(await homebridgeAccessory.service.handleFanAutoModeGet()).toBe(state.fanAutoMode);
+        expect(async () => {
+            await homebridgeAccessory.service.handleFanAutoModeSet(1);
+        }).not.toThrow();
+    }
 });
 
 test.each<Array<string | string | any>>([
@@ -270,6 +283,7 @@ test.each<Array<string | string | any>>([
     accessory.addService(api.hap.Service.Switch, 'Streamer mode', 'Streamer_Mode');
     accessory.addService(api.hap.Service.Switch, 'Outdoor silent mode', 'Outdoor_Silent_Mode');
     accessory.addService(api.hap.Service.Switch, 'Indoor silent mode', 'Indoor_Silent_Mode');
+    accessory.addService(api.hap.Service.Switch, 'Fan auto mode', 'Fan_Auto_Mode');
     accessory.context['device'] = device;
 
     const removeServiceSpy = jest.spyOn(accessory, 'removeService').mockImplementation();
@@ -282,6 +296,7 @@ test.each<Array<string | string | any>>([
     expect(removeServiceSpy).toHaveBeenNthCalledWith(3, expect.objectContaining({ displayName: 'Streamer mode', subtype: 'Streamer_Mode' }));
     expect(removeServiceSpy).toHaveBeenNthCalledWith(4, expect.objectContaining({ displayName: 'Outdoor silent mode', subtype: 'Outdoor_Silent_Mode' }));
     expect(removeServiceSpy).toHaveBeenNthCalledWith(5, expect.objectContaining({ displayName: 'Indoor silent mode', subtype: 'Indoor_Silent_Mode' }));
+    expect(removeServiceSpy).toHaveBeenNthCalledWith(6, expect.objectContaining({ displayName: 'Fan auto mode', subtype: 'Fan_Auto_Mode' }));
 
 });
 
@@ -313,6 +328,7 @@ test('DaikinCloudAirConditioningAccessory Getters', async () => {
     expect(await homebridgeAccessory.service.handleStreamerModeGet()).toEqual(false);
     expect(await homebridgeAccessory.service.handleOutdoorSilentModeGet()).toEqual(false);
     expect(await homebridgeAccessory.service.handleIndoorSilentModeGet()).toEqual(false);
+    expect(await homebridgeAccessory.service.handleFanAutoModeGet()).toEqual(false);
 });
 
 test('DaikinCloudAirConditioningAccessory Setters', async () => {
@@ -372,4 +388,7 @@ test('DaikinCloudAirConditioningAccessory Setters', async () => {
 
     await homebridgeAccessory.service.handleIndoorSilentModeSet(1);
     expect(setDataSpy).toHaveBeenNthCalledWith(15, 'climateControl', 'fanControl', '/operationModes/heating/fanSpeed/currentMode', 'quiet');
+
+    await homebridgeAccessory.service.handleFanAutoModeSet(1);
+    expect(setDataSpy).toHaveBeenNthCalledWith(16, 'climateControl', 'fanControl', '/operationModes/heating/fanSpeed/currentMode', 'auto');
 });

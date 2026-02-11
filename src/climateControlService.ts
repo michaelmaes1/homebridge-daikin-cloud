@@ -1,6 +1,6 @@
-import {CharacteristicValue, PlatformAccessory, Service} from 'homebridge';
-import {DaikinCloudAccessoryContext, DaikinCloudPlatform} from './platform';
-import {DaikinCloudRepo} from './repository/daikinCloudRepo';
+import { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
+import { DaikinCloudAccessoryContext, DaikinCloudPlatform } from './platform';
+import { DaikinCloudRepo } from './repository/daikinCloudRepo';
 
 export class ClimateControlService {
     readonly platform: DaikinCloudPlatform;
@@ -15,6 +15,7 @@ export class ClimateControlService {
         INDOOR_SILENT_MODE: 'Indoor silent mode',
         DRY_OPERATION_MODE: 'Dry operation mode',
         FAN_ONLY_OPERATION_MODE: 'Fan only operation mode',
+        FAN_AUTO_MODE: 'Fan auto mode',
     };
 
     private readonly name: string;
@@ -27,6 +28,7 @@ export class ClimateControlService {
     private readonly switchServiceIndoorSilentMode?: Service;
     private readonly switchServiceDryOperationMode?: Service;
     private readonly switchServiceFanOnlyOperationMode?: Service;
+    private readonly switchServiceFanAutoMode?: Service;
 
     constructor(
         platform: DaikinCloudPlatform,
@@ -45,6 +47,7 @@ export class ClimateControlService {
         this.switchServiceIndoorSilentMode = this.accessory.getService(this.extraServices.INDOOR_SILENT_MODE);
         this.switchServiceDryOperationMode = this.accessory.getService(this.extraServices.DRY_OPERATION_MODE);
         this.switchServiceFanOnlyOperationMode = this.accessory.getService(this.extraServices.FAN_ONLY_OPERATION_MODE);
+        this.switchServiceFanAutoMode = this.accessory.getService(this.extraServices.FAN_AUTO_MODE);
 
         this.name = this.accessory.displayName;
 
@@ -248,6 +251,26 @@ export class ClimateControlService {
         } else {
             if (this.switchServiceFanOnlyOperationMode) {
                 accessory.removeService(this.switchServiceFanOnlyOperationMode);
+            }
+        }
+
+        if (this.hasFanAutoModeFeature() && this.platform.config.showExtraFeatures) {
+            this.platform.log.debug(`[${this.name}] Device has FanAutoMode, add Switch Service`);
+
+            this.switchServiceFanAutoMode = this.switchServiceFanAutoMode || accessory.addService(this.platform.Service.Switch, this.extraServices.FAN_AUTO_MODE, 'fan_auto_mode');
+            this.switchServiceFanAutoMode.setCharacteristic(this.platform.Characteristic.Name, this.extraServices.FAN_AUTO_MODE);
+
+            this.switchServiceFanAutoMode
+                .addOptionalCharacteristic(this.platform.Characteristic.ConfiguredName);
+            this.switchServiceFanAutoMode
+                .setCharacteristic(this.platform.Characteristic.ConfiguredName, this.extraServices.FAN_AUTO_MODE);
+
+            this.switchServiceFanAutoMode.getCharacteristic(this.platform.Characteristic.On)
+                .onGet(this.handleFanAutoModeGet.bind(this))
+                .onSet(this.handleFanAutoModeSet.bind(this));
+        } else {
+            if (this.switchServiceFanAutoMode) {
+                accessory.removeService(this.switchServiceFanAutoMode);
             }
         }
     }
@@ -549,6 +572,23 @@ export class ClimateControlService {
         }
     }
 
+    async handleFanAutoModeGet() {
+        const fanAutoModeOn = this.accessory.context.device.getData(this.managementPointId, 'fanControl', `/operationModes/${this.getCurrentOperationMode()}/fanSpeed/currentMode`).value === DaikinFanSpeedModes.AUTO;
+        this.platform.log.debug(`[${this.name}] GET FanAutoMode, fanAutoModeOn: ${fanAutoModeOn}, last update: ${this.accessory.context.device.getLastUpdated()}`);
+        return fanAutoModeOn;
+    }
+
+    async handleFanAutoModeSet(value: CharacteristicValue) {
+        try {
+            this.platform.log.debug(`[${this.name}] SET FanAutoMode to: ${value}`);
+            const daikinFanSpeedMode = value as boolean ? DaikinFanSpeedModes.AUTO : DaikinFanSpeedModes.FIXED;
+            await this.accessory.context.device.setData(this.managementPointId, 'fanControl', `/operationModes/${this.getCurrentOperationMode()}/fanSpeed/currentMode`, daikinFanSpeedMode);
+            this.platform.forceUpdateDevices();
+        } catch (e) {
+            this.platform.log.error('Failed to set', e, JSON.stringify(DaikinCloudRepo.maskSensitiveCloudDeviceData(this.accessory.context.device.desc), null, 4));
+        }
+    }
+
     getCurrentOperationMode(): DaikinOperationModes {
         return this.accessory.context.device.getData(this.managementPointId, 'operationMode', undefined).value;
     }
@@ -686,6 +726,16 @@ export class ClimateControlService {
 
     hasFanOnlyOperationModeFeature() {
         return this.hasOperationMode(DaikinOperationModes.FAN_ONLY);
+    }
+
+    hasFanAutoModeFeature() {
+        const currentModeFanControl = this.accessory.context.device.getData(this.managementPointId, 'fanControl', `/operationModes/${this.getCurrentOperationMode()}/fanSpeed/currentMode`);
+        if (!currentModeFanControl) {
+            return false;
+        }
+        const fanSpeedValues: Array<string> = currentModeFanControl.values;
+        this.platform.log.debug(`[${this.name}] hasFanAutoModeFeature, fanAutoMode: ${fanSpeedValues.includes(DaikinFanSpeedModes.AUTO)}`);
+        return fanSpeedValues.includes(DaikinFanSpeedModes.AUTO);
     }
 }
 
